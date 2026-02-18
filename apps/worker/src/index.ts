@@ -1,8 +1,15 @@
 import "dotenv/config";
 
-import { logger, startWorkers } from "@avatar/core";
+import { isLiteRuntime, logger, startWorkers } from "@avatar/core";
 
-const workers = startWorkers();
+if (isLiteRuntime()) {
+  logger.info("Lite runtime enabled: worker process is not required");
+  setInterval(() => {
+    // keep process alive for monorepo dev mode without Redis workers
+  }, 60_000);
+}
+
+const workers = isLiteRuntime() ? [] : startWorkers();
 
 logger.info("Avatar OS workers started", {
   queues: workers.length,

@@ -34,6 +34,13 @@ const providers: Provider[] = [
   }),
 ];
 
+const devFallbackSecret =
+  process.env.NODE_ENV === "production"
+    ? undefined
+    : "avatar-os-dev-secret-change-me";
+const authSecret =
+  process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET ?? devFallbackSecret;
+
 if (process.env.AUTH_GITHUB_ID && process.env.AUTH_GITHUB_SECRET) {
   providers.push(
     GitHub({
@@ -49,6 +56,7 @@ if (process.env.AUTH_GITHUB_ID && process.env.AUTH_GITHUB_SECRET) {
 }
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
+  secret: authSecret,
   session: {
     strategy: "jwt",
   },

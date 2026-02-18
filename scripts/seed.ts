@@ -2,6 +2,10 @@ import { ensureUser, upsertMemory } from "../packages/core/src/services/reposito
 import { getEmbeddingAdapter } from "../packages/core/src/factory";
 
 async function run(): Promise<void> {
+  if ((process.env.APP_RUNTIME_MODE ?? "full") === "lite") {
+    console.log("Skipping seed in lite runtime mode (data is in-memory per process).");
+    return;
+  }
   const user = await ensureUser({
     email: "demo@avataros.local",
     name: "Demo User",

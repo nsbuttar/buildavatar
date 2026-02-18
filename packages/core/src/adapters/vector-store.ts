@@ -1,6 +1,11 @@
 import type { PoolClient } from "pg";
 
 import { query, toPgVector, withTransaction } from "../db";
+import {
+  listKnowledgeChunksForUser,
+  listMemoriesWithEmbeddings,
+  upsertKnowledgeChunks,
+} from "../services/repositories-lite";
 import type { MemoryRecord, RetrievedChunk, RetrievedMemory } from "../types/domain";
 import type { VectorStoreAdapter } from "./interfaces";
 
@@ -61,6 +66,20 @@ async function insertChunk(
       chunk.contentHash,
     ],
   );
+}
+
+function cosineSimilarity(a: number[], b: number[]): number {
+  if (!a.length || !b.length || a.length !== b.length) return 0;
+  let dot = 0;
+  let aNorm = 0;
+  let bNorm = 0;
+  for (let i = 0; i < a.length; i += 1) {
+    dot += a[i] * b[i];
+    aNorm += a[i] * a[i];
+    bNorm += b[i] * b[i];
+  }
+  if (!aNorm || !bNorm) return 0;
+  return dot / (Math.sqrt(aNorm) * Math.sqrt(bNorm));
 }
 
 export class PgVectorStoreAdapter implements VectorStoreAdapter {
@@ -190,6 +209,93 @@ export class PgVectorStoreAdapter implements VectorStoreAdapter {
       [input.userId, `%${input.query}%`, input.k],
     );
     return rows;
+  }
+}
+
+export class LiteVectorStoreAdapter implements VectorStoreAdapter {
+  async upsertChunks(
+    chunks: Array<{
+      id: string;
+      knowledgeItemId: string;
+      userId: string;
+      chunkIndex: number;
+      text: string;
+      tokenCount: number;
+      embedding: number[];
+      metadata: Record<string, unknown>;
+      contentHash: string;
+    }>,
+  ): Promise<void> {
+    await upsertKnowledgeChunks(chunks);
+  }
+
+  async similaritySearch(input: {
+    userId: string;
+    embedding: number[];
+    k: number;
+    filters?: Record<string, unknown>;
+  }): Promise<RetrievedChunk[]> {
+    const rows = listKnowledgeChunksForUser(input.userId)
+      .filter(({ chunk }) => {
+        if (!input.filters || Object.keys(input.filters).length === 0) return true;
+        return Object.entries(input.filters).every(([key, value]) => {
+          const metadataValue = chunk.metadata[key];
+          return String(metadataValue ?? "") === String(value ?? "");
+        });
+      })
+      .map(({ chunk, item }) => ({
+        chunkId: chunk.id,
+        knowledgeItemId: chunk.knowledgeItemId,
+        score: cosineSimilarity(chunk.embedding, input.embedding),
+        text: chunk.text,
+        metadata: chunk.metadata,
+        source: {
+          title: item.title,
+          url: item.url,
+          source: item.source,
+        },
+      }))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, input.k);
+    return rows;
+  }
+
+  async memorySearch(input: {
+    userId: string;
+    query: string;
+    embedding?: number[];
+    k: number;
+  }): Promise<RetrievedMemory[]> {
+    const memories = listMemoriesWithEmbeddings(input.userId);
+    if (input.embedding && input.embedding.length > 0) {
+      return memories
+        .filter((memory) => memory.embedding && memory.embedding.length > 0)
+        .map((memory) => ({
+          id: memory.id,
+          type: memory.type,
+          content: memory.content,
+          confidence: memory.confidence,
+          pinned: memory.pinned,
+          score: cosineSimilarity(memory.embedding ?? [], input.embedding ?? []),
+        }))
+        .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
+        .slice(0, input.k);
+    }
+    const normalizedQuery = input.query.toLowerCase();
+    return memories
+      .filter((memory) => memory.content.toLowerCase().includes(normalizedQuery))
+      .sort((a, b) => {
+        if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
+        return b.updatedAt.getTime() - a.updatedAt.getTime();
+      })
+      .slice(0, input.k)
+      .map((memory) => ({
+        id: memory.id,
+        type: memory.type as MemoryRecord["type"],
+        content: memory.content,
+        confidence: memory.confidence,
+        pinned: memory.pinned,
+      }));
   }
 }
 

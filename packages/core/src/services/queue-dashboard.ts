@@ -1,5 +1,6 @@
 import { Job } from "bullmq";
 
+import { isLiteRuntime } from "../config";
 import { QUEUE_NAMES, connectionSyncQueue, ingestionQueue, reflectionQueue } from "../queues/queues";
 
 const queueMap = {
@@ -46,6 +47,41 @@ export async function getQueueDashboard(): Promise<{
   stats: QueueStats[];
   failedJobs: FailedJobSummary[];
 }> {
+  if (isLiteRuntime()) {
+    return {
+      stats: [
+        {
+          queue: QUEUE_NAMES.INGESTION,
+          waiting: 0,
+          active: 0,
+          completed: 0,
+          failed: 0,
+          delayed: 0,
+          paused: false,
+        },
+        {
+          queue: QUEUE_NAMES.REFLECTION,
+          waiting: 0,
+          active: 0,
+          completed: 0,
+          failed: 0,
+          delayed: 0,
+          paused: false,
+        },
+        {
+          queue: QUEUE_NAMES.CONNECTION_SYNC,
+          waiting: 0,
+          active: 0,
+          completed: 0,
+          failed: 0,
+          delayed: 0,
+          paused: false,
+        },
+      ],
+      failedJobs: [],
+    };
+  }
+
   const stats: QueueStats[] = [];
   const failedJobs: FailedJobSummary[] = [];
 
@@ -82,6 +118,9 @@ export async function retryFailedJob(input: {
   queue: QueueName;
   jobId: string;
 }): Promise<{ retried: boolean }> {
+  if (isLiteRuntime()) {
+    return { retried: false };
+  }
   const queue = queueMap[input.queue];
   const job = await queue.getJob(input.jobId);
   if (!job) {
@@ -94,6 +133,9 @@ export async function retryFailedJob(input: {
 export async function retryAllFailedJobs(input: {
   queue: QueueName;
 }): Promise<{ count: number }> {
+  if (isLiteRuntime()) {
+    return { count: 0 };
+  }
   const queue = queueMap[input.queue];
   const failed = await queue.getJobs(["failed"], 0, 999, true);
   let count = 0;

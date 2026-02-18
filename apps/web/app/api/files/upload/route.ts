@@ -6,10 +6,11 @@ import {
   appendAuditLog,
   createKnowledgeItem,
   ingestionQueue,
+  isLiteRuntime,
   sha256Hex,
 } from "@avatar/core";
 
-import { deps } from "@/lib/deps";
+import { deps, ingestionService } from "@/lib/deps";
 import { withApiGuard } from "@/lib/api";
 
 const supportedTypes = new Set([
@@ -64,21 +65,31 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           mimeType,
         },
       });
-      await ingestionQueue.add(
-        `file-${knowledgeItem.id}`,
-        {
-          kind: "file",
+      if (isLiteRuntime()) {
+        await ingestionService.ingestFile({
           userId,
           knowledgeItemId: knowledgeItem.id,
           objectKey,
           fileName: file.name,
           mimeType,
-        },
-        {
-          removeOnComplete: 100,
-          removeOnFail: 1000,
-        },
-      );
+        });
+      } else {
+        await ingestionQueue.add(
+          `file-${knowledgeItem.id}`,
+          {
+            kind: "file",
+            userId,
+            knowledgeItemId: knowledgeItem.id,
+            objectKey,
+            fileName: file.name,
+            mimeType,
+          },
+          {
+            removeOnComplete: 100,
+            removeOnFail: 1000,
+          },
+        );
+      }
       await appendAuditLog(null, {
         userId,
         action: "file.uploaded",

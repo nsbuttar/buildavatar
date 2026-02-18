@@ -4,6 +4,7 @@ const configSchema = z.object({
   NODE_ENV: z
     .enum(["development", "test", "production"])
     .default("development"),
+  APP_RUNTIME_MODE: z.enum(["full", "lite"]).default("full"),
   DATABASE_URL: z
     .string()
     .min(1)
@@ -38,4 +39,8 @@ export function getConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   }
   cachedConfig = parsed.data;
   return cachedConfig;
+}
+
+export function isLiteRuntime(env: NodeJS.ProcessEnv = process.env): boolean {
+  return getConfig(env).APP_RUNTIME_MODE === "lite";
 }

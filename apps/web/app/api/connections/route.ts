@@ -5,10 +5,13 @@ import {
   appendAuditLog,
   connectionSyncQueue,
   disconnectConnection,
+  isLiteRuntime,
   listConnections,
+  updateConnectionSyncState,
   upsertConnection,
 } from "@avatar/core";
 
+import { connectors, ingestionService } from "@/lib/deps";
 import { withApiGuard } from "@/lib/api";
 
 const connectSchema = z.discriminatedUnion("provider", [
@@ -83,18 +86,42 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             },
           });
 
-    await connectionSyncQueue.add(
-      `sync-${connection.provider}-${connection.id}`,
-      {
-        userId,
-        provider: connection.provider as "github" | "youtube" | "x",
+    if (isLiteRuntime()) {
+      await updateConnectionSyncState({
         connectionId: connection.id,
-      },
-      {
-        removeOnComplete: 100,
-        removeOnFail: 1000,
-      },
-    );
+        status: "pending",
+      });
+      try {
+        await ingestionService.syncConnection({
+          userId,
+          connectionId: connection.id,
+          connector: connectors[connection.provider as "github" | "youtube" | "x"],
+        });
+        await updateConnectionSyncState({
+          connectionId: connection.id,
+          status: "connected",
+        });
+      } catch (error) {
+        await updateConnectionSyncState({
+          connectionId: connection.id,
+          status: "error",
+        });
+        throw error;
+      }
+    } else {
+      await connectionSyncQueue.add(
+        `sync-${connection.provider}-${connection.id}`,
+        {
+          userId,
+          provider: connection.provider as "github" | "youtube" | "x",
+          connectionId: connection.id,
+        },
+        {
+          removeOnComplete: 100,
+          removeOnFail: 1000,
+        },
+      );
+    }
 
     await appendAuditLog(null, {
       userId,

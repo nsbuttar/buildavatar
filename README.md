@@ -57,15 +57,17 @@ Production-ready scaffold for a privacy-first personal avatar platform:
    - `pnpm install`
 2. Copy env:
    - `cp .env.example .env` (or equivalent on Windows)
-3. Start infra:
-   - `docker compose up -d`
-4. Run migrations:
-   - `pnpm db:migrate`
-5. Seed demo data (optional):
-   - `pnpm db:seed`
-6. Start app + workers:
-   - `pnpm dev`
-7. Open:
+3. Choose runtime mode:
+   - **Lite mode (no Docker / BIOS virtualization needed):**
+     - set `APP_RUNTIME_MODE=lite`
+     - run `pnpm dev:lite`
+   - **Full mode (Postgres + Redis via Docker):**
+     - keep `APP_RUNTIME_MODE=full`
+     - run `docker compose up -d`
+     - run `pnpm db:migrate`
+     - optional: `pnpm db:seed`
+     - run `pnpm dev`
+4. Open:
    - `http://localhost:3000`
 
 ## Key Pages
@@ -131,6 +133,8 @@ See `docs/threat-model.md`.
 ## Commands
 
 - `pnpm dev`: run web + worker
+- `pnpm dev:lite`: run browser app in in-process lite mode (no Docker)
+- `pnpm dev:web`: run web app only
 - `pnpm build`: build all packages
 - `pnpm test`: run test suites
 - `pnpm typecheck`: run TS checks

@@ -6,8 +6,10 @@ import {
   getConversationById,
   getConversationMessages,
   getUserById,
+  isLiteRuntime,
   reflectionQueue,
   runAgent,
+  runMemoryReflection,
   saveMessage,
   streamRagAnswer,
 } from "@avatar/core";
@@ -28,6 +30,23 @@ async function queueReflectionIfNeeded(input: {
 }): Promise<void> {
   const messages = await getConversationMessages(input.conversationId, 100);
   if (messages.length % 10 !== 0) return;
+  if (isLiteRuntime()) {
+    const user = await getUserById(input.userId);
+    if (!user) return;
+    await runMemoryReflection(
+      {
+        llm: deps.llm,
+        embeddings: deps.embeddings,
+        vectorStore: deps.vectorStore,
+      },
+      {
+        userId: input.userId,
+        conversationId: input.conversationId,
+        allowLearningFromConversations: user.allowLearningFromConversations,
+      },
+    );
+    return;
+  }
   await reflectionQueue.add(
     `reflection-${input.conversationId}-${Date.now()}`,
     {

@@ -6,6 +6,10 @@ import { Pool } from "pg";
 const migrationsDir = path.resolve(process.cwd(), "db", "migrations");
 
 async function run(): Promise<void> {
+  if ((process.env.APP_RUNTIME_MODE ?? "full") === "lite") {
+    console.log("Skipping migrations in lite runtime mode.");
+    return;
+  }
   const databaseUrl = process.env.DATABASE_URL;
   if (!databaseUrl) {
     throw new Error("DATABASE_URL is required to run migrations");

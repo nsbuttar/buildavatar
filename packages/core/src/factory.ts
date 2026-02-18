@@ -1,4 +1,4 @@
-import { getConfig } from "./config";
+import { getConfig, isLiteRuntime } from "./config";
 import {
   MockEmbeddingAdapter,
   MockLlmAdapter,
@@ -8,7 +8,7 @@ import {
   OpenAiTtsAdapter,
 } from "./adapters/openai";
 import { LocalStorageAdapter, S3StorageAdapter } from "./adapters/storage";
-import { PgVectorStoreAdapter } from "./adapters/vector-store";
+import { LiteVectorStoreAdapter, PgVectorStoreAdapter } from "./adapters/vector-store";
 import type {
   EmbeddingAdapter,
   LlmAdapter,
@@ -45,7 +45,9 @@ export function getEmbeddingAdapter(): EmbeddingAdapter {
 
 export function getVectorStoreAdapter(): VectorStoreAdapter {
   if (vectorStore) return vectorStore;
-  vectorStore = new PgVectorStoreAdapter();
+  vectorStore = isLiteRuntime()
+    ? new LiteVectorStoreAdapter()
+    : new PgVectorStoreAdapter();
   return vectorStore;
 }
 

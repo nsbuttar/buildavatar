@@ -1,8 +1,15 @@
 import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
 
-import { appendAuditLog, connectionSyncQueue, upsertConnection } from "@avatar/core";
+import {
+  appendAuditLog,
+  connectionSyncQueue,
+  isLiteRuntime,
+  updateConnectionSyncState,
+  upsertConnection,
+} from "@avatar/core";
 
+import { connectors, ingestionService } from "@/lib/deps";
 import { withApiGuard } from "@/lib/api";
 
 interface GitHubTokenResponse {
@@ -61,18 +68,42 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         accessToken: payload.access_token,
       },
     });
-    await connectionSyncQueue.add(
-      `sync-github-${connection.id}`,
-      {
-        userId,
-        provider: "github",
+    if (isLiteRuntime()) {
+      await updateConnectionSyncState({
         connectionId: connection.id,
-      },
-      {
-        removeOnComplete: 100,
-        removeOnFail: 1000,
-      },
-    );
+        status: "pending",
+      });
+      try {
+        await ingestionService.syncConnection({
+          userId,
+          connectionId: connection.id,
+          connector: connectors.github,
+        });
+        await updateConnectionSyncState({
+          connectionId: connection.id,
+          status: "connected",
+        });
+      } catch (error) {
+        await updateConnectionSyncState({
+          connectionId: connection.id,
+          status: "error",
+        });
+        throw error;
+      }
+    } else {
+      await connectionSyncQueue.add(
+        `sync-github-${connection.id}`,
+        {
+          userId,
+          provider: "github",
+          connectionId: connection.id,
+        },
+        {
+          removeOnComplete: 100,
+          removeOnFail: 1000,
+        },
+      );
+    }
     await appendAuditLog(null, {
       userId,
       action: "connection.github_oauth_connected",

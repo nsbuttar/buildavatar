@@ -4,6 +4,8 @@
   "packageManager": "pnpm@9.15.1",
   "scripts": {
     "dev": "turbo run dev --parallel",
+    "dev:web": "pnpm --filter @avatar/web dev",
+    "dev:lite": "node scripts/dev-lite.mjs",
     "build": "turbo run build",
     "lint": "turbo run lint",
     "test": "turbo run test",
