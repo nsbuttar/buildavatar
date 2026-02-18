@@ -89,6 +89,8 @@ Production-ready scaffold for a privacy-first personal avatar platform:
 - `POST /api/avatar/voice-samples`: consent-gated voice profile creation
 - `GET /api/admin/logs`: audit + analytics snapshot
 - `GET/POST /api/admin/jobs`: queue stats, failed jobs, retry actions
+- `POST /api/hooks/wake`: token-authenticated external wake event ingestion
+- `POST /api/hooks/agent`: token-authenticated isolated agent run
 
 ## Agent Tools (MVP)
 
