@@ -1,0 +1,21 @@
+{
+  "name": "avatar-os",
+  "private": true,
+  "packageManager": "pnpm@9.15.1",
+  "scripts": {
+    "dev": "turbo run dev --parallel",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "test": "turbo run test",
+    "typecheck": "turbo run typecheck",
+    "db:migrate": "tsx scripts/migrate.ts",
+    "db:seed": "tsx scripts/seed.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.0",
+    "pg": "^8.13.3",
+    "tsx": "^4.20.3",
+    "turbo": "^2.4.4",
+    "typescript": "^5.7.3"
+  }
+}

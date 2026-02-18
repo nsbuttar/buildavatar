@@ -1,0 +1,33 @@
+{
+  "name": "@avatar/core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsup src/index.ts --format esm,cjs --dts",
+    "dev": "tsx watch src/index.ts",
+    "lint": "echo 'core lint not configured'",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.840.0",
+    "@aws-sdk/lib-storage": "^3.840.0",
+    "bullmq": "^5.56.5",
+    "csv-parse": "^5.6.0",
+    "ioredis": "^5.7.0",
+    "mammoth": "^1.9.1",
+    "openai": "^4.104.0",
+    "pdf-parse": "^1.1.1",
+    "pg": "^8.13.3",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@types/pdf-parse": "^1.1.5",
+    "@types/pg": "^8.11.11",
+    "tsup": "^8.4.0",
+    "vitest": "^3.0.5"
+  }
+}

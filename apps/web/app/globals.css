@@ -1,0 +1,39 @@
+@import "tailwindcss";
+
+:root {
+  --bg: #f5f8f6;
+  --bg-elev: #ffffff;
+  --fg: #142018;
+  --muted: #5b6a61;
+  --line: #d8e3dc;
+  --brand: #0d7a5f;
+  --brand-strong: #06543f;
+  --accent: #d45b2f;
+}
+
+html,
+body {
+  background: radial-gradient(circle at 20% -10%, #dff0e8 0%, transparent 50%),
+    radial-gradient(circle at 80% -20%, #f7e6de 0%, transparent 45%), var(--bg);
+  color: var(--fg);
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.card {
+  background: var(--bg-elev);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+}
+
+.label {
+  font-size: 12px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 700;
+}
+
