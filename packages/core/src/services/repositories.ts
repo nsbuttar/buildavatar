@@ -414,6 +414,84 @@ export async function getKnowledgeItemById(input: {
   };
 }
 
+export async function updateKnowledgeItemRawText(input: {
+  userId: string;
+  knowledgeItemId: string;
+  rawText: string;
+  metadata?: Record<string, unknown>;
+}): Promise<void> {
+  await query(
+    `
+    UPDATE knowledge_items
+    SET
+      raw_text = $3,
+      metadata = COALESCE($4, metadata),
+      fetched_at = NOW(),
+      deleted_at = NULL
+    WHERE id = $1 AND user_id = $2
+    `,
+    [input.knowledgeItemId, input.userId, input.rawText, input.metadata ?? null],
+  );
+}
+
+export async function getKnowledgeDocument(input: {
+  userId: string;
+  knowledgeItemId: string;
+}): Promise<
+  | {
+      id: string;
+      title: string | null;
+      source: ProviderName;
+      url: string | null;
+      text: string;
+      chunkCount: number;
+      metadata: Record<string, unknown>;
+    }
+  | null
+> {
+  const itemRows = await query<{
+    id: string;
+    title: string | null;
+    source: ProviderName;
+    url: string | null;
+    raw_text: string | null;
+    metadata: Record<string, unknown>;
+  }>(
+    `
+    SELECT id, title, source, url, raw_text, metadata
+    FROM knowledge_items
+    WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL
+    `,
+    [input.knowledgeItemId, input.userId],
+  );
+  const item = itemRows[0];
+  if (!item) return null;
+
+  const chunkRows = await query<{ text: string }>(
+    `
+    SELECT text
+    FROM knowledge_chunks
+    WHERE knowledge_item_id = $1
+      AND user_id = $2
+      AND deleted_at IS NULL
+    ORDER BY chunk_index ASC
+    `,
+    [input.knowledgeItemId, input.userId],
+  );
+
+  const mergedText =
+    item.raw_text ?? chunkRows.map((row) => row.text).join("\n\n").trim();
+  return {
+    id: item.id,
+    title: item.title,
+    source: item.source,
+    url: item.url,
+    text: mergedText,
+    chunkCount: chunkRows.length,
+    metadata: item.metadata ?? {},
+  };
+}
+
 export async function upsertDocumentBatch(documents: IngestedDocument[]): Promise<
   Array<{
     itemId: string;

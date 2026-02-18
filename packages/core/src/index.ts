@@ -21,10 +21,10 @@ export * from "./services/chunker";
 export * from "./services/ingestion";
 export * from "./services/memory";
 export * from "./services/parser";
+export * from "./services/queue-dashboard";
 export * from "./services/rag-chat";
 export * from "./services/repositories";
 export * from "./services/workers";
 
 export * from "./types/domain";
 export * from "./types/queue";
-

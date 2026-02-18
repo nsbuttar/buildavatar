@@ -10,27 +10,123 @@ import type {
 } from "./interfaces";
 
 function buildVisemeTimeline(text: string): TtsResult["visemes"] {
-  const visemeMap: Record<string, string> = {
-    a: "A",
-    e: "E",
-    i: "I",
-    o: "O",
-    u: "U",
+  const punctuationPauseMs: Record<string, number> = {
+    ",": 90,
+    ";": 120,
+    ":": 120,
+    ".": 170,
+    "!": 190,
+    "?": 190,
   };
-  const words = text.split(/\s+/).filter(Boolean);
+
+  const digraphMap: Array<{ pattern: string; viseme: string; durationMs: number }> = [
+    { pattern: "tion", viseme: "I", durationMs: 90 },
+    { pattern: "sh", viseme: "I", durationMs: 84 },
+    { pattern: "ch", viseme: "I", durationMs: 84 },
+    { pattern: "th", viseme: "E", durationMs: 78 },
+    { pattern: "ph", viseme: "E", durationMs: 76 },
+    { pattern: "wh", viseme: "U", durationMs: 76 },
+    { pattern: "oo", viseme: "U", durationMs: 92 },
+    { pattern: "ee", viseme: "E", durationMs: 88 },
+    { pattern: "ea", viseme: "E", durationMs: 84 },
+    { pattern: "ou", viseme: "O", durationMs: 86 },
+    { pattern: "ow", viseme: "O", durationMs: 86 },
+    { pattern: "ai", viseme: "A", durationMs: 88 },
+    { pattern: "ay", viseme: "A", durationMs: 88 },
+    { pattern: "oi", viseme: "O", durationMs: 86 },
+    { pattern: "oy", viseme: "O", durationMs: 86 },
+  ];
+
+  const charMap: Record<string, { viseme: string; durationMs: number }> = {
+    a: { viseme: "A", durationMs: 84 },
+    e: { viseme: "E", durationMs: 80 },
+    i: { viseme: "I", durationMs: 80 },
+    o: { viseme: "O", durationMs: 86 },
+    u: { viseme: "U", durationMs: 88 },
+    y: { viseme: "I", durationMs: 74 },
+    b: { viseme: "M", durationMs: 62 },
+    p: { viseme: "M", durationMs: 62 },
+    m: { viseme: "M", durationMs: 68 },
+    f: { viseme: "E", durationMs: 72 },
+    v: { viseme: "E", durationMs: 72 },
+    s: { viseme: "E", durationMs: 72 },
+    z: { viseme: "E", durationMs: 72 },
+    c: { viseme: "E", durationMs: 70 },
+    t: { viseme: "I", durationMs: 68 },
+    d: { viseme: "I", durationMs: 68 },
+    n: { viseme: "I", durationMs: 70 },
+    l: { viseme: "I", durationMs: 72 },
+    r: { viseme: "I", durationMs: 72 },
+    w: { viseme: "U", durationMs: 76 },
+    q: { viseme: "U", durationMs: 76 },
+    g: { viseme: "O", durationMs: 70 },
+    k: { viseme: "O", durationMs: 70 },
+    h: { viseme: "A", durationMs: 66 },
+    j: { viseme: "I", durationMs: 74 },
+    x: { viseme: "E", durationMs: 74 },
+  };
+
+  const tokens = text.match(/[A-Za-z']+|[0-9]+|[.,!?;:]/g) ?? [];
   const visemes: TtsResult["visemes"] = [];
   let cursor = 0;
-  for (const word of words) {
-    const firstVowel = word.toLowerCase().split("").find((char) => visemeMap[char]);
-    const viseme = firstVowel ? visemeMap[firstVowel] : "M";
-    const duration = Math.max(90, word.length * 45);
-    visemes.push({
-      viseme,
-      startMs: cursor,
-      endMs: cursor + duration,
-    });
+
+  const pushCue = (viseme: string, durationMs: number) => {
+    const duration = Math.max(28, Math.floor(durationMs));
+    const last = visemes[visemes.length - 1];
+    if (last && last.viseme === viseme && last.endMs >= cursor) {
+      last.endMs += duration;
+    } else {
+      visemes.push({
+        viseme,
+        startMs: cursor,
+        endMs: cursor + duration,
+      });
+    }
     cursor += duration;
+  };
+
+  for (let tokenIndex = 0; tokenIndex < tokens.length; tokenIndex += 1) {
+    const token = tokens[tokenIndex];
+    const pause = punctuationPauseMs[token];
+    if (pause) {
+      pushCue("M", pause);
+      continue;
+    }
+
+    let idx = 0;
+    const lower = token.toLowerCase();
+    while (idx < lower.length) {
+      let matched = false;
+      for (const rule of digraphMap) {
+        if (lower.startsWith(rule.pattern, idx)) {
+          pushCue(rule.viseme, rule.durationMs);
+          idx += rule.pattern.length;
+          matched = true;
+          break;
+        }
+      }
+      if (matched) continue;
+
+      const char = lower[idx];
+      const mapping = charMap[char];
+      if (mapping) {
+        pushCue(mapping.viseme, mapping.durationMs);
+      } else {
+        const isDigit = char >= "0" && char <= "9";
+        pushCue("M", isDigit ? 62 : 48);
+      }
+      idx += 1;
+    }
+
+    if (tokenIndex < tokens.length - 1) {
+      pushCue("M", 34);
+    }
   }
+
+  if (!visemes.length) {
+    pushCue("M", 100);
+  }
+
   return visemes;
 }
 

@@ -1,16 +1,19 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 import { NextRequest, NextResponse } from "next/server";
 
 import {
   appendAuditLog,
   getUserById,
-  sha256Hex,
   updateUserProfile,
 } from "@avatar/core";
 
 import { deps } from "@/lib/deps";
 import { withApiGuard } from "@/lib/api";
+
+const MAX_SAMPLES = 8;
+const MAX_SAMPLE_BYTES = 8 * 1024 * 1024;
+const MAX_TOTAL_BYTES = 24 * 1024 * 1024;
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   return withApiGuard(request, async ({ userId }) => {
@@ -28,9 +31,44 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     if (files.length === 0) {
       return NextResponse.json({ error: "At least one sample is required." }, { status: 400 });
     }
+    if (files.length > MAX_SAMPLES) {
+      return NextResponse.json(
+        { error: `At most ${MAX_SAMPLES} samples are allowed.` },
+        { status: 400 },
+      );
+    }
+    const invalidType = files.find((file) => !file.type.startsWith("audio/"));
+    if (invalidType) {
+      return NextResponse.json(
+        { error: `Invalid sample type for ${invalidType.name}. Audio files only.` },
+        { status: 400 },
+      );
+    }
+    const oversized = files.find((file) => file.size > MAX_SAMPLE_BYTES);
+    if (oversized) {
+      return NextResponse.json(
+        {
+          error: `Sample ${oversized.name} exceeds ${Math.floor(MAX_SAMPLE_BYTES / (1024 * 1024))}MB limit.`,
+        },
+        { status: 400 },
+      );
+    }
+    const totalBytes = files.reduce((sum, file) => sum + file.size, 0);
+    if (totalBytes > MAX_TOTAL_BYTES) {
+      return NextResponse.json(
+        {
+          error: `Total sample size exceeds ${Math.floor(MAX_TOTAL_BYTES / (1024 * 1024))}MB.`,
+        },
+        { status: 400 },
+      );
+    }
+
     const bytes = await Promise.all(files.map((file) => file.arrayBuffer()));
-    const profileSeed = Buffer.concat(bytes.map((chunk) => Buffer.from(chunk)));
-    const profileId = `vc_${sha256Hex(profileSeed).slice(0, 24)}`;
+    const hasher = createHash("sha256");
+    for (const chunk of bytes) {
+      hasher.update(Buffer.from(chunk));
+    }
+    const profileId = `vc_${hasher.digest("hex").slice(0, 24)}`;
 
     for (const [idx, file] of files.entries()) {
       const payload = Buffer.from(bytes[idx]);
@@ -69,4 +107,3 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     });
   });
 }
-

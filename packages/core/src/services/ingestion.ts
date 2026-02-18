@@ -16,6 +16,7 @@ import {
   createKnowledgeItem,
   getConnectionById,
   listConnections,
+  updateKnowledgeItemRawText,
   upsertDocumentBatch,
 } from "./repositories";
 
@@ -50,6 +51,15 @@ export class IngestionService {
     if (chunks.length === 0) {
       return { chunks: 0 };
     }
+    await updateKnowledgeItemRawText({
+      userId: input.userId,
+      knowledgeItemId: input.knowledgeItemId,
+      rawText: parsed.text,
+      metadata: {
+        filename: input.fileName,
+        parser: parsed.metadata,
+      },
+    });
 
     const embeddings = await this.embeddingAdapter.embed(chunks.map((chunk) => chunk.text));
     await this.vectorStore.upsertChunks(

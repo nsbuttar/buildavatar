@@ -1,6 +1,6 @@
 import type { EmbeddingAdapter, LlmAdapter, VectorStoreAdapter } from "../adapters/interfaces";
 import type { ToolCallResult } from "../types/domain";
-import { createTask } from "./repositories";
+import { createTask, getKnowledgeDocument } from "./repositories";
 
 export interface AgentToolContext {
   userId: string;
@@ -38,7 +38,29 @@ export function buildAgentTools(deps: {
   llm: LlmAdapter;
   embeddings: EmbeddingAdapter;
   vectorStore: VectorStoreAdapter;
+  getDocumentById?: (input: {
+    userId: string;
+    knowledgeItemId: string;
+  }) => Promise<
+    | {
+        id: string;
+        title: string | null;
+        source: string;
+        url: string | null;
+        text: string;
+        chunkCount: number;
+        metadata: Record<string, unknown>;
+      }
+    | null
+  >;
+  createTaskFn?: (input: {
+    userId: string;
+    title: string;
+    notes?: string;
+  }) => Promise<{ id: string; title: string; notes: string | null; createdAt: Date }>;
 }): AgentTool[] {
+  const getDocumentById = deps.getDocumentById ?? getKnowledgeDocument;
+  const createTaskFn = deps.createTaskFn ?? createTask;
   return [
     {
       name: "search_knowledge_base",
@@ -47,20 +69,58 @@ export function buildAgentTools(deps: {
       run: async (input, context) => {
         const query = String(input.query ?? "");
         const embedding = (await deps.embeddings.embed(query))[0];
+        const filters =
+          input.filters && typeof input.filters === "object"
+            ? (input.filters as Record<string, unknown>)
+            : undefined;
         const chunks = await deps.vectorStore.similaritySearch({
           userId: context.userId,
           embedding,
           k: Number(input.k ?? 5),
+          filters,
         });
         return { query, chunks };
       },
     },
     {
-      name: "summarize",
-      description: "Summarizes given text.",
+      name: "get_document",
+      description: "Fetches full text and metadata for a specific document by item_id.",
       requiresConfirmation: false,
-      run: async (input) => {
-        const text = String(input.text ?? "");
+      run: async (input, context) => {
+        const knowledgeItemId = String(input.item_id ?? input.itemId ?? "");
+        if (!knowledgeItemId) {
+          return { found: false, error: "item_id is required" };
+        }
+        const document = await getDocumentById({
+          userId: context.userId,
+          knowledgeItemId,
+        });
+        if (!document) {
+          return { found: false };
+        }
+        return {
+          found: true,
+          document,
+        };
+      },
+    },
+    {
+      name: "summarize",
+      description: "Summarizes given text or a document by item_id.",
+      requiresConfirmation: false,
+      run: async (input, context) => {
+        const itemId = String(input.item_id ?? input.itemId ?? "");
+        let text = String(input.text ?? "");
+        if (!text && itemId) {
+          const document = await getDocumentById({
+            userId: context.userId,
+            knowledgeItemId: itemId,
+          });
+          text = document?.text ?? "";
+        }
+        if (!text.trim()) {
+          return { summary: "No text found to summarize." };
+        }
         const prompt = `Summarize the following in 5 bullet points:\\n\\n${text}`;
         const summary = await deps.llm.complete(prompt, { temperature: 0.2 });
         return { summary };
@@ -89,7 +149,7 @@ export function buildAgentTools(deps: {
       run: async (input, context) => {
         const title = String(input.title ?? "");
         const notes = input.notes ? String(input.notes) : undefined;
-        const task = await createTask({
+        const task = await createTaskFn({
           userId: context.userId,
           title,
           notes,
@@ -105,6 +165,26 @@ export async function runAgent(
     llm: LlmAdapter;
     embeddings: EmbeddingAdapter;
     vectorStore: VectorStoreAdapter;
+    getDocumentById?: (input: {
+      userId: string;
+      knowledgeItemId: string;
+    }) => Promise<
+      | {
+          id: string;
+          title: string | null;
+          source: string;
+          url: string | null;
+          text: string;
+          chunkCount: number;
+          metadata: Record<string, unknown>;
+        }
+      | null
+    >;
+    createTaskFn?: (input: {
+      userId: string;
+      title: string;
+      notes?: string;
+    }) => Promise<{ id: string; title: string; notes: string | null; createdAt: Date }>;
   },
   input: {
     userId: string;
@@ -126,6 +206,12 @@ export async function runAgent(
   const plannerPrompt = [
     "You are an agent planner for Avatar OS.",
     "Return JSON with keys: answerIntent, toolCalls[] where each item has toolName, args, reason.",
+    "Tool arg hints:",
+    "- search_knowledge_base: { query, k?, filters? }",
+    "- get_document: { item_id }",
+    "- summarize: { text } or { item_id }",
+    "- draft_email: { context, tone? }",
+    "- create_task: { title, notes? }",
     "Only pick tools from this catalog.",
     JSON.stringify(catalog),
     `User request: ${input.query}`,
@@ -174,4 +260,3 @@ export async function runAgent(
     proposedActions,
   };
 }
-

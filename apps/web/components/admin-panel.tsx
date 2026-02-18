@@ -26,23 +26,68 @@ type Task = {
   createdAt: string;
 };
 
+type QueueStats = {
+  queue: "ingestion-jobs" | "reflection-jobs" | "connection-sync-jobs";
+  waiting: number;
+  active: number;
+  completed: number;
+  failed: number;
+  delayed: number;
+  paused: boolean;
+};
+
+type FailedJob = {
+  queue: QueueStats["queue"];
+  id: string;
+  name: string;
+  failedReason: string | null;
+  attemptsMade: number;
+  timestamp: number;
+  data: unknown;
+};
+
 export function AdminPanel() {
   const [logs, setLogs] = useState<AuditLog[]>([]);
   const [analytics, setAnalytics] = useState<Analytics | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [queueStats, setQueueStats] = useState<QueueStats[]>([]);
+  const [failedJobs, setFailedJobs] = useState<FailedJob[]>([]);
+  const [queueError, setQueueError] = useState("");
   const [status, setStatus] = useState("");
 
   const load = async () => {
-    const response = await fetch("/api/admin/logs");
-    if (!response.ok) return;
-    const payload = (await response.json()) as {
-      logs: AuditLog[];
-      analytics: Analytics;
-      tasks: Task[];
-    };
-    setLogs(payload.logs);
-    setAnalytics(payload.analytics);
-    setTasks(payload.tasks);
+    const [logsResponse, jobsResponse] = await Promise.all([
+      fetch("/api/admin/logs"),
+      fetch("/api/admin/jobs"),
+    ]);
+
+    if (logsResponse.ok) {
+      const payload = (await logsResponse.json()) as {
+        logs: AuditLog[];
+        analytics: Analytics;
+        tasks: Task[];
+      };
+      setLogs(payload.logs);
+      setAnalytics(payload.analytics);
+      setTasks(payload.tasks);
+    }
+
+    const jobsPayload = (await jobsResponse.json().catch(() => null)) as
+      | {
+          stats: QueueStats[];
+          failedJobs: FailedJob[];
+          error?: string;
+        }
+      | null;
+    if (jobsResponse.ok && jobsPayload) {
+      setQueueStats(jobsPayload.stats);
+      setFailedJobs(jobsPayload.failedJobs);
+      setQueueError("");
+    } else {
+      setQueueStats([]);
+      setFailedJobs([]);
+      setQueueError(jobsPayload?.error ?? "Queue dashboard unavailable");
+    }
   };
 
   useEffect(() => {
@@ -79,6 +124,86 @@ export function AdminPanel() {
             <Metric label="Messages" value={analytics.messageCount} />
           </div>
         ) : null}
+      </section>
+
+      <section className="card p-6">
+        <div className="flex items-center justify-between">
+          <h2 className="text-xl font-semibold">Background job dashboard</h2>
+          <button
+            type="button"
+            className="rounded-lg border border-[var(--line)] px-3 py-1 text-sm"
+            onClick={() => void load()}
+          >
+            Refresh
+          </button>
+        </div>
+        {queueError ? <p className="mt-2 text-sm text-amber-700">{queueError}</p> : null}
+        {queueStats.length > 0 ? (
+          <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {queueStats.map((queue) => (
+              <div key={queue.queue} className="rounded-xl border border-[var(--line)] bg-white p-3">
+                <p className="text-sm font-semibold">{queue.queue}</p>
+                <p className="mt-1 text-xs text-[var(--muted)]">
+                  waiting {queue.waiting} | active {queue.active} | delayed {queue.delayed}
+                </p>
+                <p className="text-xs text-[var(--muted)]">
+                  failed {queue.failed} | completed {queue.completed}
+                </p>
+                <button
+                  type="button"
+                  className="mt-2 rounded-lg border border-[var(--line)] px-2 py-1 text-xs"
+                  onClick={async () => {
+                    await fetch("/api/admin/jobs", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        queue: queue.queue,
+                        retryAll: true,
+                      }),
+                    });
+                    await load();
+                  }}
+                >
+                  Retry all failed
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : null}
+
+        <div className="mt-4 space-y-2">
+          {failedJobs.length === 0 ? (
+            <p className="text-sm text-[var(--muted)]">No failed jobs.</p>
+          ) : (
+            failedJobs.map((job) => (
+              <div key={`${job.queue}:${job.id}`} className="rounded-xl border border-[var(--line)] bg-white p-3">
+                <p className="text-sm font-semibold">
+                  {job.queue} / {job.name} / {job.id}
+                </p>
+                <p className="text-xs text-rose-700">
+                  {job.failedReason ?? "Unknown failure"} (attempts: {job.attemptsMade})
+                </p>
+                <button
+                  type="button"
+                  className="mt-2 rounded-lg border border-[var(--line)] px-2 py-1 text-xs"
+                  onClick={async () => {
+                    await fetch("/api/admin/jobs", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        queue: job.queue,
+                        jobId: job.id,
+                      }),
+                    });
+                    await load();
+                  }}
+                >
+                  Retry job
+                </button>
+              </div>
+            ))
+          )}
+        </div>
       </section>
 
       <section className="card p-6">
@@ -175,4 +300,3 @@ function Metric({ label, value }: { label: string; value: number }) {
     </div>
   );
 }
-
