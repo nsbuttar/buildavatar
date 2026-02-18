@@ -1,6 +1,12 @@
 import OpenAI from "openai";
 
 import { getConfig } from "../config";
+import {
+  getErrorRetryAfterMs,
+  getErrorStatus,
+  isLikelyTransientError,
+  retryAsync,
+} from "../services/retry";
 import type {
   EmbeddingAdapter,
   LlmAdapter,
@@ -137,6 +143,24 @@ class MissingApiKeyError extends Error {
   }
 }
 
+const OPENAI_RETRY_OPTIONS = {
+  attempts: 4,
+  minDelayMs: 500,
+  maxDelayMs: 12_000,
+  jitter: 0.1,
+} as const;
+
+function shouldRetryOpenAiError(error: unknown): boolean {
+  const status = getErrorStatus(error);
+  if (status === 408 || status === 409 || status === 425 || status === 429) {
+    return true;
+  }
+  if (typeof status === "number" && status >= 500) {
+    return true;
+  }
+  return isLikelyTransientError(error);
+}
+
 export class OpenAiEmbeddingAdapter implements EmbeddingAdapter {
   readonly modelName: string;
   private readonly client: OpenAI;
@@ -150,10 +174,18 @@ export class OpenAiEmbeddingAdapter implements EmbeddingAdapter {
 
   async embed(input: string | string[]): Promise<number[][]> {
     const normalized = Array.isArray(input) ? input : [input];
-    const response = await this.client.embeddings.create({
-      model: this.modelName,
-      input: normalized,
-    });
+    const response = await retryAsync(
+      async () =>
+        this.client.embeddings.create({
+          model: this.modelName,
+          input: normalized,
+        }),
+      {
+        ...OPENAI_RETRY_OPTIONS,
+        shouldRetry: shouldRetryOpenAiError,
+        retryAfterMs: getErrorRetryAfterMs,
+      },
+    );
     return response.data.map((entry) => entry.embedding);
   }
 }
@@ -170,11 +202,19 @@ export class OpenAiLlmAdapter implements LlmAdapter {
   }
 
   async complete(prompt: string, options?: { temperature?: number }): Promise<string> {
-    const response = await this.client.chat.completions.create({
-      model: this.modelName,
-      temperature: options?.temperature ?? 0.2,
-      messages: [{ role: "user", content: prompt }],
-    });
+    const response = await retryAsync(
+      async () =>
+        this.client.chat.completions.create({
+          model: this.modelName,
+          temperature: options?.temperature ?? 0.2,
+          messages: [{ role: "user", content: prompt }],
+        }),
+      {
+        ...OPENAI_RETRY_OPTIONS,
+        shouldRetry: shouldRetryOpenAiError,
+        retryAfterMs: getErrorRetryAfterMs,
+      },
+    );
     return response.choices[0]?.message.content ?? "";
   }
 
@@ -183,12 +223,20 @@ export class OpenAiLlmAdapter implements LlmAdapter {
     onToken: (token: string) => void,
     options?: { temperature?: number },
   ): Promise<string> {
-    const stream = await this.client.chat.completions.create({
-      model: this.modelName,
-      stream: true,
-      temperature: options?.temperature ?? 0.2,
-      messages: [{ role: "user", content: prompt }],
-    });
+    const stream = await retryAsync(
+      async () =>
+        this.client.chat.completions.create({
+          model: this.modelName,
+          stream: true,
+          temperature: options?.temperature ?? 0.2,
+          messages: [{ role: "user", content: prompt }],
+        }),
+      {
+        ...OPENAI_RETRY_OPTIONS,
+        shouldRetry: shouldRetryOpenAiError,
+        retryAfterMs: getErrorRetryAfterMs,
+      },
+    );
     let acc = "";
     for await (const part of stream) {
       const token = part.choices[0]?.delta?.content ?? "";
@@ -266,11 +314,19 @@ export class OpenAiTtsAdapter implements TtsAdapter {
     const voice = input.consentGranted
       ? input.voiceCloneProfileId || input.fallbackVoice
       : "alloy";
-    const speech = await this.client.audio.speech.create({
-      model: this.modelName,
-      voice,
-      input: input.text,
-    });
+    const speech = await retryAsync(
+      async () =>
+        this.client.audio.speech.create({
+          model: this.modelName,
+          voice,
+          input: input.text,
+        }),
+      {
+        ...OPENAI_RETRY_OPTIONS,
+        shouldRetry: shouldRetryOpenAiError,
+        retryAfterMs: getErrorRetryAfterMs,
+      },
+    );
     const buffer = Buffer.from(await speech.arrayBuffer());
     return {
       mimeType: "audio/mpeg",

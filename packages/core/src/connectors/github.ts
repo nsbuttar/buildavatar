@@ -2,6 +2,12 @@ import { decryptJson } from "../crypto";
 import { getConnectionById } from "../services/repositories";
 import type { ConnectorAdapter } from "../adapters/interfaces";
 import { sha256Hex } from "../crypto";
+import {
+  getErrorRetryAfterMs,
+  getErrorStatus,
+  isLikelyTransientError,
+  retryAsync,
+} from "../services/retry";
 import type { ConnectorSyncResult, IngestedDocument } from "../types/domain";
 
 interface GitHubRepo {
@@ -20,17 +26,56 @@ interface ConnectionToken {
   accessToken: string;
 }
 
-async function fetchJson<T>(url: string, token: string): Promise<T> {
-  const response = await fetch(url, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      Accept: "application/vnd.github+json",
-      "X-GitHub-Api-Version": "2022-11-28",
-    },
-  });
-  if (!response.ok) {
-    throw new Error(`GitHub API error: ${response.status} ${response.statusText}`);
+class GitHubHttpError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly headers: Headers,
+  ) {
+    super(message);
+    this.name = "GitHubHttpError";
   }
+}
+
+function shouldRetryGitHubError(error: unknown): boolean {
+  const status = getErrorStatus(error);
+  if (status === 408 || status === 429) {
+    return true;
+  }
+  if (typeof status === "number" && status >= 500) {
+    return true;
+  }
+  return isLikelyTransientError(error);
+}
+
+async function fetchJson<T>(url: string, token: string): Promise<T> {
+  const response = await retryAsync(
+    async () => {
+      const res = await fetch(url, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: "application/vnd.github+json",
+          "X-GitHub-Api-Version": "2022-11-28",
+        },
+      });
+      if (!res.ok) {
+        throw new GitHubHttpError(
+          `GitHub API error: ${res.status} ${res.statusText}`,
+          res.status,
+          res.headers,
+        );
+      }
+      return res;
+    },
+    {
+      attempts: 4,
+      minDelayMs: 500,
+      maxDelayMs: 12_000,
+      jitter: 0.1,
+      shouldRetry: shouldRetryGitHubError,
+      retryAfterMs: getErrorRetryAfterMs,
+    },
+  );
   return (await response.json()) as T;
 }
 
@@ -39,12 +84,35 @@ async function fetchRepoReadme(
   token: string,
 ): Promise<string | null> {
   const readmeUrl = `https://raw.githubusercontent.com/${repoFullName}/HEAD/README.md`;
-  const response = await fetch(readmeUrl, {
-    headers: {
-      Authorization: `Bearer ${token}`,
+  const response = await retryAsync(
+    async () => {
+      const res = await fetch(readmeUrl, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      if (res.status === 404) {
+        return res;
+      }
+      if (!res.ok) {
+        throw new GitHubHttpError(
+          `GitHub README fetch error: ${res.status} ${res.statusText}`,
+          res.status,
+          res.headers,
+        );
+      }
+      return res;
     },
-  });
-  if (!response.ok) return null;
+    {
+      attempts: 3,
+      minDelayMs: 400,
+      maxDelayMs: 8_000,
+      jitter: 0.1,
+      shouldRetry: shouldRetryGitHubError,
+      retryAfterMs: getErrorRetryAfterMs,
+    },
+  );
+  if (response.status === 404) return null;
   return response.text();
 }
 
@@ -120,4 +188,3 @@ export class GitHubConnector implements ConnectorAdapter {
     ];
   }
 }
-

@@ -23,7 +23,9 @@ export * from "./services/memory";
 export * from "./services/parser";
 export * from "./services/queue-dashboard";
 export * from "./services/rag-chat";
+export * from "./services/retry";
 export * from "./services/repositories";
+export * from "./services/untrusted-content";
 export * from "./services/workers";
 
 export * from "./types/domain";

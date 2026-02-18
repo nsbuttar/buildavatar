@@ -63,15 +63,15 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       );
     }
 
-    const bytes = await Promise.all(files.map((file) => file.arrayBuffer()));
     const hasher = createHash("sha256");
-    for (const chunk of bytes) {
+    for (const file of files) {
+      const chunk = await file.arrayBuffer();
       hasher.update(Buffer.from(chunk));
     }
     const profileId = `vc_${hasher.digest("hex").slice(0, 24)}`;
 
-    for (const [idx, file] of files.entries()) {
-      const payload = Buffer.from(bytes[idx]);
+    for (const file of files) {
+      const payload = Buffer.from(await file.arrayBuffer());
       const key = `${userId}/voice-samples/${profileId}/${Date.now()}-${randomUUID()}-${file.name}`;
       await deps.storage.putObject({
         key,

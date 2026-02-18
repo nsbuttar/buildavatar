@@ -1,6 +1,12 @@
 import { decryptJson, sha256Hex } from "../crypto";
 import { getConnectionById } from "../services/repositories";
 import type { ConnectorAdapter } from "../adapters/interfaces";
+import {
+  getErrorRetryAfterMs,
+  getErrorStatus,
+  isLikelyTransientError,
+  retryAsync,
+} from "../services/retry";
 import type { ConnectorSyncResult, IngestedDocument } from "../types/domain";
 
 interface YouTubeCredentials {
@@ -20,6 +26,28 @@ interface YouTubeSearchResponse {
       channelTitle: string;
     };
   }>;
+}
+
+class YouTubeHttpError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly headers: Headers,
+  ) {
+    super(message);
+    this.name = "YouTubeHttpError";
+  }
+}
+
+function shouldRetryYouTubeError(error: unknown): boolean {
+  const status = getErrorStatus(error);
+  if (status === 408 || status === 429) {
+    return true;
+  }
+  if (typeof status === "number" && status >= 500) {
+    return true;
+  }
+  return isLikelyTransientError(error);
 }
 
 export class YouTubeConnector implements ConnectorAdapter {
@@ -42,12 +70,29 @@ export class YouTubeConnector implements ConnectorAdapter {
       order: "date",
       type: "video",
     });
-    const response = await fetch(
-      `https://www.googleapis.com/youtube/v3/search?${query.toString()}`,
+    const response = await retryAsync(
+      async () => {
+        const res = await fetch(
+          `https://www.googleapis.com/youtube/v3/search?${query.toString()}`,
+        );
+        if (!res.ok) {
+          throw new YouTubeHttpError(
+            `YouTube API error: ${res.status} ${res.statusText}`,
+            res.status,
+            res.headers,
+          );
+        }
+        return res;
+      },
+      {
+        attempts: 4,
+        minDelayMs: 500,
+        maxDelayMs: 12_000,
+        jitter: 0.1,
+        shouldRetry: shouldRetryYouTubeError,
+        retryAfterMs: getErrorRetryAfterMs,
+      },
     );
-    if (!response.ok) {
-      throw new Error(`YouTube API error: ${response.status} ${response.statusText}`);
-    }
     const payload = (await response.json()) as YouTubeSearchResponse;
     const documents: IngestedDocument[] = payload.items.map((item) => {
       const text = [
@@ -100,4 +145,3 @@ export class YouTubeConnector implements ConnectorAdapter {
     ];
   }
 }
-
