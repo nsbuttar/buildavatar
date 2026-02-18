@@ -8,10 +8,12 @@ import {
   getUserById,
   isLiteRuntime,
   reflectionQueue,
+  resolveUserLlmAdapter,
   runAgent,
   runMemoryReflection,
   saveMessage,
   streamRagAnswer,
+  type LlmAdapter,
 } from "@avatar/core";
 
 import { deps } from "@/lib/deps";
@@ -27,6 +29,7 @@ const chatSchema = z.object({
 async function queueReflectionIfNeeded(input: {
   userId: string;
   conversationId: string;
+  llm: LlmAdapter;
 }): Promise<void> {
   const messages = await getConversationMessages(input.conversationId, 100);
   if (messages.length % 10 !== 0) return;
@@ -35,7 +38,7 @@ async function queueReflectionIfNeeded(input: {
     if (!user) return;
     await runMemoryReflection(
       {
-        llm: deps.llm,
+        llm: input.llm,
         embeddings: deps.embeddings,
         vectorStore: deps.vectorStore,
       },
@@ -98,11 +101,15 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       if (!user) {
         return NextResponse.json({ error: "User not found" }, { status: 404 });
       }
+      const { adapter: llm } = await resolveUserLlmAdapter({
+        userId,
+        fallback: deps.llm,
+      });
 
       if (parsed.data.agentMode) {
         const agentResult = await runAgent(
           {
-            llm: deps.llm,
+            llm,
             embeddings: deps.embeddings,
             vectorStore: deps.vectorStore,
           },
@@ -120,6 +127,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         await queueReflectionIfNeeded({
           userId,
           conversationId: finalConversationId,
+          llm,
         });
         return NextResponse.json({
           conversationId: finalConversationId,
@@ -144,7 +152,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
               send("meta", { conversationId: finalConversationId });
               const result = await streamRagAnswer(
                 {
-                  llm: deps.llm,
+                  llm,
                   embeddings: deps.embeddings,
                   vectorStore: deps.vectorStore,
                 },
@@ -163,6 +171,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
               await queueReflectionIfNeeded({
                 userId,
                 conversationId: finalConversationId,
+                llm,
               });
             } catch (error) {
               send("error", {

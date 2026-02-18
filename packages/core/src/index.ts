@@ -5,6 +5,7 @@ export * from "./factory";
 export * from "./logger";
 
 export * from "./adapters/interfaces";
+export * from "./adapters/gemini";
 export * from "./adapters/openai";
 export * from "./adapters/storage";
 export * from "./adapters/vector-store";
@@ -19,6 +20,7 @@ export * from "./services/agent";
 export * from "./services/avatar";
 export * from "./services/chunker";
 export * from "./services/ingestion";
+export * from "./services/llm-provider";
 export * from "./services/memory";
 export * from "./services/parser";
 export * from "./services/queue-dashboard";

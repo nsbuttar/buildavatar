@@ -143,6 +143,24 @@ class MissingApiKeyError extends Error {
   }
 }
 
+interface OpenAiAdapterOptions {
+  modelName?: string;
+  apiKey?: string;
+}
+
+function normalizeOpenAiOptions(
+  options: string | OpenAiAdapterOptions | undefined,
+  defaultModel: string,
+): OpenAiAdapterOptions & { modelName: string } {
+  if (typeof options === "string") {
+    return { modelName: options };
+  }
+  return {
+    modelName: options?.modelName ?? defaultModel,
+    apiKey: options?.apiKey,
+  };
+}
+
 const OPENAI_RETRY_OPTIONS = {
   attempts: 4,
   minDelayMs: 500,
@@ -165,11 +183,13 @@ export class OpenAiEmbeddingAdapter implements EmbeddingAdapter {
   readonly modelName: string;
   private readonly client: OpenAI;
 
-  constructor(modelName = getConfig().OPENAI_EMBED_MODEL) {
-    const apiKey = getConfig().OPENAI_API_KEY;
+  constructor(options?: string | OpenAiAdapterOptions) {
+    const config = getConfig();
+    const normalized = normalizeOpenAiOptions(options, config.OPENAI_EMBED_MODEL);
+    const apiKey = normalized.apiKey ?? config.OPENAI_API_KEY;
     if (!apiKey) throw new MissingApiKeyError("OPENAI_API_KEY is required for embeddings");
     this.client = new OpenAI({ apiKey });
-    this.modelName = modelName;
+    this.modelName = normalized.modelName;
   }
 
   async embed(input: string | string[]): Promise<number[][]> {
@@ -194,11 +214,13 @@ export class OpenAiLlmAdapter implements LlmAdapter {
   readonly modelName: string;
   private readonly client: OpenAI;
 
-  constructor(modelName = getConfig().OPENAI_CHAT_MODEL) {
-    const apiKey = getConfig().OPENAI_API_KEY;
+  constructor(options?: string | OpenAiAdapterOptions) {
+    const config = getConfig();
+    const normalized = normalizeOpenAiOptions(options, config.OPENAI_CHAT_MODEL);
+    const apiKey = normalized.apiKey ?? config.OPENAI_API_KEY;
     if (!apiKey) throw new MissingApiKeyError("OPENAI_API_KEY is required for chat");
     this.client = new OpenAI({ apiKey });
-    this.modelName = modelName;
+    this.modelName = normalized.modelName;
   }
 
   async complete(prompt: string, options?: { temperature?: number }): Promise<string> {
@@ -298,11 +320,13 @@ export class OpenAiTtsAdapter implements TtsAdapter {
   private readonly client: OpenAI;
   private readonly modelName: string;
 
-  constructor(modelName = getConfig().OPENAI_TTS_MODEL) {
-    const apiKey = getConfig().OPENAI_API_KEY;
+  constructor(options?: string | OpenAiAdapterOptions) {
+    const config = getConfig();
+    const normalized = normalizeOpenAiOptions(options, config.OPENAI_TTS_MODEL);
+    const apiKey = normalized.apiKey ?? config.OPENAI_API_KEY;
     if (!apiKey) throw new MissingApiKeyError("OPENAI_API_KEY is required for TTS");
     this.client = new OpenAI({ apiKey });
-    this.modelName = modelName;
+    this.modelName = normalized.modelName;
   }
 
   async synthesize(input: {

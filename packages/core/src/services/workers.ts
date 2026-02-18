@@ -8,6 +8,7 @@ import { GitHubConnector } from "../connectors/github";
 import { YouTubeConnector } from "../connectors/youtube";
 import { XConnectorSkeleton } from "../connectors/x";
 import { IngestionService } from "./ingestion";
+import { resolveUserLlmAdapter } from "./llm-provider";
 import { runMemoryReflection } from "./memory";
 import { getUserById, updateConnectionSyncState } from "./repositories";
 
@@ -18,6 +19,7 @@ const connectors = {
 };
 
 export function startWorkers(): Worker[] {
+  const fallbackLlm = getLlmAdapter();
   const ingestionService = new IngestionService(
     getEmbeddingAdapter(),
     getVectorStoreAdapter(),
@@ -46,9 +48,13 @@ export function startWorkers(): Worker[] {
     async (job) => {
       const user = await getUserById(job.data.userId);
       if (!user) return;
+      const { adapter: llm } = await resolveUserLlmAdapter({
+        userId: job.data.userId,
+        fallback: fallbackLlm,
+      });
       await runMemoryReflection(
         {
-          llm: getLlmAdapter(),
+          llm,
           embeddings: getEmbeddingAdapter(),
           vectorStore: getVectorStoreAdapter(),
         },

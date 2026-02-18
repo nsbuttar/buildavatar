@@ -2,6 +2,8 @@ export type ProviderName =
   | "github"
   | "youtube"
   | "x"
+  | "openai"
+  | "gemini"
   | "file_drop"
   | "gmail"
   | "calendar";

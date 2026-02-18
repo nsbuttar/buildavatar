@@ -11,6 +11,14 @@ import {
 import { connectors, ingestionService } from "@/lib/deps";
 import { withApiGuard } from "@/lib/api";
 
+type SyncableProvider = "github" | "youtube" | "x";
+
+const SYNCABLE_PROVIDERS = ["github", "youtube", "x"] as const;
+
+function isSyncableProvider(provider: string): provider is SyncableProvider {
+  return SYNCABLE_PROVIDERS.includes(provider as SyncableProvider);
+}
+
 const schema = z.object({
   connectionId: z.string().uuid(),
 });
@@ -26,6 +34,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     if (!connection || connection.userId !== userId) {
       return NextResponse.json({ error: "Connection not found" }, { status: 404 });
     }
+    if (!isSyncableProvider(connection.provider)) {
+      return NextResponse.json(
+        { error: `Provider ${connection.provider} does not support sync` },
+        { status: 400 },
+      );
+    }
     if (isLiteRuntime()) {
       await updateConnectionSyncState({
         connectionId: connection.id,
@@ -35,7 +49,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         await ingestionService.syncConnection({
           userId,
           connectionId: connection.id,
-          connector: connectors[connection.provider as "github" | "youtube" | "x"],
+          connector: connectors[connection.provider],
         });
         await updateConnectionSyncState({
           connectionId: connection.id,
@@ -55,7 +69,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       `sync-${connection.provider}-${connection.id}-${Date.now()}`,
       {
         userId,
-        provider: connection.provider as "github" | "youtube" | "x",
+        provider: connection.provider,
         connectionId: connection.id,
       },
       {
